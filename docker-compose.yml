@@ -1,0 +1,120 @@
+name: freeacs-web
+
+services:
+  mongodb:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${APP_DB_NAME:-freeacs_control}
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - acs-private
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  acs:
+    build:
+      context: ./acs
+      args:
+        GENIEACS_VERSION: ${GENIEACS_VERSION:-1.2.16}
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      GENIEACS_MONGODB_CONNECTION_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/genieacs?authSource=admin
+      GENIEACS_UI_JWT_SECRET: ${GENIEACS_UI_JWT_SECRET:?set GENIEACS_UI_JWT_SECRET}
+      GENIEACS_CWMP_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-cwmp-access.log
+      GENIEACS_NBI_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-nbi-access.log
+      GENIEACS_FS_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-fs-access.log
+      GENIEACS_UI_ACCESS_LOG_FILE: /var/log/genieacs/genieacs-ui-access.log
+      GENIEACS_DEBUG_FILE: /var/log/genieacs/genieacs-debug.yaml
+      GENIEACS_EXT_DIR: /opt/genieacs/ext
+      GENIEACS_LOG_FORMAT: json
+      GENIEACS_ACCESS_LOG_FORMAT: json
+      GENIEACS_CWMP_INTERFACE: 0.0.0.0
+      GENIEACS_NBI_INTERFACE: 0.0.0.0
+      GENIEACS_FS_INTERFACE: 0.0.0.0
+      GENIEACS_UI_INTERFACE: 0.0.0.0
+      NODE_OPTIONS: --enable-source-maps
+    ports:
+      - "7547:7547"
+    volumes:
+      - acs-logs:/var/log/genieacs
+      - acs-ext:/opt/genieacs/ext
+    networks:
+      - acs-private
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- 'http://localhost:7557/devices/?query=%7B%7D' >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      acs:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8080
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${APP_DB_NAME:-freeacs_control}?authSource=admin
+      APP_DB_NAME: ${APP_DB_NAME:-freeacs_control}
+      ACS_NBI_URL: http://acs:7557
+      ACS_CWMP_PUBLIC_URL: ${ACS_CWMP_PUBLIC_URL:-http://localhost:7547}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-5}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:?set INITIAL_ADMIN_EMAIL}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?set INITIAL_ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
+    networks:
+      - acs-private
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    networks:
+      - edge
+
+networks:
+  acs-private:
+    internal: true
+  edge:
+
+volumes:
+  mongodb-data:
+  acs-logs:
+  acs-ext:
