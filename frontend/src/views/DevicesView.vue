@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Edit, Refresh, Search, Setting, SwitchButton, WarningFilled } from '@element-plus/icons-vue';
 import axios from 'axios';
@@ -23,6 +23,8 @@ const selected = ref<Device | null>(null);
 const drawerOpen = ref(false);
 const activeDeviceTab = ref('overview');
 const parameterSearch = ref('');
+const parameterPage = ref(1);
+const parameterPageSize = ref(100);
 const parameterDialogOpen = ref(false);
 const taskLoading = ref(false);
 const contextMenu = reactive({
@@ -65,6 +67,15 @@ const filteredParameterRows = computed(() => {
     [parameter.path, parameter.value, parameter.type, parameter.writable, parameter.updated].some((value) => value.toLowerCase().includes(term))
   );
 });
+const pagedParameterRows = computed(() => {
+  const start = (parameterPage.value - 1) * parameterPageSize.value;
+  return filteredParameterRows.value.slice(start, start + parameterPageSize.value);
+});
+const parameterPageStart = computed(() => {
+  if (!filteredParameterRows.value.length) return 0;
+  return (parameterPage.value - 1) * parameterPageSize.value + 1;
+});
+const parameterPageEnd = computed(() => Math.min(parameterPage.value * parameterPageSize.value, filteredParameterRows.value.length));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -73,9 +84,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function formatParameterValue(value: unknown) {
   if (value === undefined) return '';
   if (value === null) return 'null';
+  if (Array.isArray(value)) return formatParameterValue(value[0]);
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
+}
+
+function parameterValue(node: Record<string, unknown>) {
+  if ('_value' in node) return node._value;
+  if ('value' in node) return node.value;
+  return undefined;
+}
+
+function parameterType(node: Record<string, unknown>) {
+  if (typeof node._type === 'string') return node._type;
+  if (Array.isArray(node._value) && typeof node._value[1] === 'string') return node._value[1];
+  if (typeof node.type === 'string') return node.type;
+  return '-';
 }
 
 function flattenDeviceParameters(raw: Device['raw']) {
@@ -85,11 +110,11 @@ function flattenDeviceParameters(raw: Device['raw']) {
   function visit(node: unknown, path: string) {
     if (!isRecord(node)) return;
 
-    if ('_value' in node && path) {
+    if (('_value' in node || 'value' in node) && path) {
       rows.push({
         path,
-        value: formatParameterValue(node._value),
-        type: formatParameterValue(node._type) || '-',
+        value: formatParameterValue(parameterValue(node)) || '-',
+        type: parameterType(node),
         writable: typeof node._writable === 'boolean' ? (node._writable ? 'Yes' : 'No') : '-',
         updated: formatParameterValue(node._timestamp || node._lastUpdate) || '-'
       });
@@ -125,6 +150,7 @@ async function openDevice(device: Device) {
     selected.value = data.device;
     activeDeviceTab.value = 'overview';
     parameterSearch.value = '';
+    parameterPage.value = 1;
     drawerOpen.value = true;
   } catch (error) {
     const apiError = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
@@ -254,6 +280,12 @@ function onGlobalClick() {
 }
 
 onMounted(load);
+watch(parameterSearch, () => {
+  parameterPage.value = 1;
+});
+watch(parameterPageSize, () => {
+  parameterPage.value = 1;
+});
 onMounted(() => {
   window.addEventListener('click', onGlobalClick);
   window.addEventListener('contextmenu', onGlobalClick);
@@ -358,15 +390,35 @@ onBeforeUnmount(() => {
         <el-tab-pane :label="`Parameters (${parameterRows.length})`" name="parameters">
           <div class="parameter-toolbar">
             <el-input v-model="parameterSearch" :prefix-icon="Search" clearable placeholder="Search path, value, type" />
-            <span>{{ filteredParameterRows.length }} shown</span>
+            <span>{{ parameterPageStart }}-{{ parameterPageEnd }} of {{ filteredParameterRows.length }}</span>
           </div>
-          <el-table :data="filteredParameterRows" border height="520" empty-text="No parameters found">
-            <el-table-column prop="path" label="Parameter" min-width="320" show-overflow-tooltip />
-            <el-table-column prop="value" label="Value" min-width="220" show-overflow-tooltip />
+          <el-table :data="pagedParameterRows" border height="520" empty-text="No parameters found">
+            <el-table-column prop="path" label="Parameter" min-width="320">
+              <template #default="{ row }">
+                <span class="parameter-cell" :title="row.path">{{ row.path }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="value" label="Current value" min-width="260">
+              <template #default="{ row }">
+                <span class="parameter-cell" :title="row.value">{{ row.value }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="type" label="Type" width="130" />
             <el-table-column prop="writable" label="Writable" width="95" />
-            <el-table-column prop="updated" label="Updated" min-width="185" show-overflow-tooltip />
+            <el-table-column prop="updated" label="Updated" min-width="185">
+              <template #default="{ row }">
+                <span class="parameter-cell" :title="row.updated">{{ row.updated }}</span>
+              </template>
+            </el-table-column>
           </el-table>
+          <el-pagination
+            v-model:current-page="parameterPage"
+            v-model:page-size="parameterPageSize"
+            class="parameter-pagination"
+            layout="sizes, prev, pager, next"
+            :page-sizes="[50, 100, 200]"
+            :total="filteredParameterRows.length"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="Raw JSON" name="raw">
@@ -452,5 +504,17 @@ onBeforeUnmount(() => {
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
+}
+
+.parameter-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parameter-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>
