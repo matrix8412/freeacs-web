@@ -15,6 +15,7 @@ function changeTab(name: string | number) {
   <section class="settings-page">
     <el-tabs :model-value="active" @tab-change="changeTab">
       <el-tab-pane label="General" name="/settings/general" />
+      <el-tab-pane label="Device types" name="/settings/device-types" />
       <el-tab-pane label="Presets" name="/settings/presets" />
       <el-tab-pane label="Provisions" name="/settings/provisions" />
       <el-tab-pane label="Users" name="/settings/users" />

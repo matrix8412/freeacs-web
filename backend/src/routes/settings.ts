@@ -7,6 +7,7 @@ import { config } from '../config/env.js';
 import { requirePermission } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { AppSetting } from '../models/AppSetting.js';
+import { DeviceType } from '../models/DeviceType.js';
 import { Group } from '../models/Group.js';
 import { User } from '../models/User.js';
 import { AuditLog } from '../models/AuditLog.js';
@@ -74,6 +75,16 @@ const presetSchema = z.object({
   arguments: z.string().max(50000).default('')
 });
 
+const imageDataUrlSchema = z
+  .string()
+  .max(900000)
+  .refine((value) => !value || /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/]+=*$/i.test(value), 'Image must be a PNG, JPEG, GIF, or WebP data URL');
+
+const deviceTypeSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  imageDataUrl: imageDataUrlSchema.default('')
+});
+
 function ensureObjectIds(ids: string[]) {
   for (const id of ids) {
     if (!Types.ObjectId.isValid(id)) {
@@ -85,6 +96,10 @@ function ensureObjectIds(ids: string[]) {
 async function listUsers() {
   const users = await User.find().sort({ email: 1 }).populate('groupIds');
   return users.map((user) => serializeUser(user as any));
+}
+
+async function listDeviceTypes() {
+  return DeviceType.find().sort({ name: 1 });
 }
 
 function parsePrecondition(value: string) {
@@ -263,6 +278,63 @@ router.delete('/presets/:name', requirePermission('presets:write'), async (req, 
     const presets = await acsService.deletePreset(name);
     await audit(req, 'presets.delete', `preset:${name}`);
     res.json({ presets });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/device-types', requirePermission('settings:read'), async (_req, res, next) => {
+  try {
+    res.json({ deviceTypes: await listDeviceTypes() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/device-types', requirePermission('settings:write'), validateBody(deviceTypeSchema), async (req, res, next) => {
+  try {
+    await DeviceType.create(req.body);
+    await audit(req, 'device-types.create', `device-type:${req.body.name}`);
+    res.status(201).json({ deviceTypes: await listDeviceTypes() });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      next(new HttpError(409, 'Device type already exists'));
+      return;
+    }
+    next(error);
+  }
+});
+
+router.put('/device-types/:id', requirePermission('settings:write'), validateBody(deviceTypeSchema), async (req, res, next) => {
+  try {
+    const id = routeParam(req.params.id);
+    const deviceType = await DeviceType.findById(id);
+    if (!deviceType) throw new HttpError(404, 'Device type not found');
+
+    deviceType.name = req.body.name;
+    deviceType.imageDataUrl = req.body.imageDataUrl;
+    await deviceType.save();
+
+    await audit(req, 'device-types.update', `device-type:${id}`);
+    res.json({ deviceTypes: await listDeviceTypes() });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      next(new HttpError(409, 'Device type already exists'));
+      return;
+    }
+    next(error);
+  }
+});
+
+router.delete('/device-types/:id', requirePermission('settings:write'), async (req, res, next) => {
+  try {
+    const id = routeParam(req.params.id);
+    const deviceType = await DeviceType.findById(id);
+    if (!deviceType) throw new HttpError(404, 'Device type not found');
+
+    await deviceType.deleteOne();
+    await audit(req, 'device-types.delete', `device-type:${id}`);
+    res.json({ deviceTypes: await listDeviceTypes() });
   } catch (error) {
     next(error);
   }

@@ -234,6 +234,54 @@ body {
   margin: 2px 4px 2px 0;
 }
 
+.device-type-thumb {
+  display: block;
+  width: 58px;
+  height: 42px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.device-type-upload {
+  display: grid;
+  gap: 12px;
+}
+
+.device-type-preview,
+.device-type-empty {
+  width: 220px;
+  height: 150px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.device-type-preview {
+  object-fit: contain;
+  background: #ffffff;
+}
+
+.device-type-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #f5f7fa;
+}
+
+.device-type-upload-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.device-type-file-label {
+  cursor: pointer;
+}
+
+.device-type-file-label input {
+  display: none;
+}
+
 .column-chooser strong {
   display: block;
   margin-bottom: 8px;

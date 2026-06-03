@@ -31,6 +31,12 @@ export type Device = {
   raw?: Record<string, unknown>;
 };
 
+export type DeviceType = {
+  _id: string;
+  name: string;
+  imageDataUrl: string;
+};
+
 export type Provision = {
   name: string;
   script: string;

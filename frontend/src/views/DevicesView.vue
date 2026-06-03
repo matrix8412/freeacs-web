@@ -7,7 +7,7 @@ import { api } from '../api/client';
 import TableColumnChooser from '../components/TableColumnChooser.vue';
 import { useDirtyDialog } from '../composables/useDirtyDialog';
 import { useTableColumns } from '../composables/useTableColumns';
-import type { Device } from '../types';
+import type { Device, DeviceType } from '../types';
 
 type DeviceParameter = {
   path: string;
@@ -19,6 +19,7 @@ type DeviceParameter = {
 
 const loading = ref(false);
 const devices = ref<Device[]>([]);
+const deviceTypes = ref<DeviceType[]>([]);
 const selected = ref<Device | null>(null);
 const drawerOpen = ref(false);
 const activeDeviceTab = ref('overview');
@@ -76,6 +77,11 @@ const parameterPageStart = computed(() => {
   return (parameterPage.value - 1) * parameterPageSize.value + 1;
 });
 const parameterPageEnd = computed(() => Math.min(parameterPage.value * parameterPageSize.value, filteredParameterRows.value.length));
+const matchedDeviceType = computed(() => {
+  const model = selected.value?.productClass?.trim().toLowerCase();
+  if (!model) return undefined;
+  return deviceTypes.value.find((deviceType) => deviceType.name.trim().toLowerCase() === model);
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -222,6 +228,15 @@ function openContextMenu(row: Device, _column: unknown, event: MouseEvent) {
   contextMenu.visible = true;
 }
 
+async function loadDeviceTypes() {
+  try {
+    const { data } = await api.get('/settings/device-types');
+    deviceTypes.value = data.deviceTypes;
+  } catch {
+    deviceTypes.value = [];
+  }
+}
+
 function openDeviceFromContext() {
   const device = contextMenu.device;
   if (!device) return;
@@ -279,7 +294,10 @@ function onGlobalClick() {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  void load();
+  void loadDeviceTypes();
+});
 watch(parameterSearch, () => {
   parameterPage.value = 1;
 });
@@ -366,24 +384,22 @@ onBeforeUnmount(() => {
     </div>
   </teleport>
 
-  <el-drawer v-model="drawerOpen" size="64%" :title="selected?.serialNumber || selected?.id">
+  <el-drawer v-model="drawerOpen" size="80%" :title="selected?.serialNumber || selected?.id">
     <template v-if="selected">
-      <div class="drawer-actions">
-        <el-button type="primary" :icon="Setting" @click="openParameterDialog">Set Parameter</el-button>
-        <el-button :icon="Refresh" @click="runTask(selected, 'refresh')">Refresh</el-button>
-        <el-button type="warning" plain :icon="SwitchButton" @click="runTask(selected, 'reboot')">Reboot</el-button>
-        <el-button type="danger" plain :icon="WarningFilled" @click="runTask(selected, 'factoryReset')">Factory Reset</el-button>
-      </div>
-
       <el-tabs v-model="activeDeviceTab" class="device-detail-tabs">
         <el-tab-pane label="Overview" name="overview">
-          <div class="detail-grid">
-            <span>Manufacturer</span><strong>{{ selected.manufacturer || '-' }}</strong>
-            <span>Model</span><strong>{{ selected.productClass || '-' }}</strong>
-            <span>Firmware</span><strong>{{ selected.softwareVersion || '-' }}</strong>
-            <span>IP address</span><strong>{{ selected.ipAddress || '-' }}</strong>
-            <span>First authorized</span><strong>{{ selected.firstAuthorizedAt ? new Date(selected.firstAuthorizedAt).toLocaleString() : '-' }}</strong>
-            <span>Last inform</span><strong>{{ selected.lastInform ? new Date(selected.lastInform).toLocaleString() : 'Never' }}</strong>
+          <div class="device-overview">
+            <img v-if="matchedDeviceType?.imageDataUrl" class="device-overview-image" :src="matchedDeviceType.imageDataUrl" :alt="matchedDeviceType.name" />
+            <div v-else class="device-overview-placeholder">No image</div>
+            <div class="detail-grid">
+              <span>Device type</span><strong>{{ matchedDeviceType?.name || '-' }}</strong>
+              <span>Manufacturer</span><strong>{{ selected.manufacturer || '-' }}</strong>
+              <span>Model</span><strong>{{ selected.productClass || '-' }}</strong>
+              <span>Firmware</span><strong>{{ selected.softwareVersion || '-' }}</strong>
+              <span>IP address</span><strong>{{ selected.ipAddress || '-' }}</strong>
+              <span>First authorized</span><strong>{{ selected.firstAuthorizedAt ? new Date(selected.firstAuthorizedAt).toLocaleString() : '-' }}</strong>
+              <span>Last inform</span><strong>{{ selected.lastInform ? new Date(selected.lastInform).toLocaleString() : 'Never' }}</strong>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -398,7 +414,7 @@ onBeforeUnmount(() => {
                 <span class="parameter-cell" :title="row.path">{{ row.path }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="value" label="Current value" min-width="260">
+            <el-table-column prop="value" label="Value" min-width="320">
               <template #default="{ row }">
                 <span class="parameter-cell" :title="row.value">{{ row.value }}</span>
               </template>
@@ -425,6 +441,14 @@ onBeforeUnmount(() => {
           <pre class="raw-json">{{ JSON.stringify(selected.raw, null, 2) }}</pre>
         </el-tab-pane>
       </el-tabs>
+    </template>
+    <template #footer>
+      <div v-if="selected" class="drawer-actions">
+        <el-button type="primary" :icon="Setting" @click="openParameterDialog">Set Parameter</el-button>
+        <el-button :icon="Refresh" @click="runTask(selected, 'refresh')">Refresh</el-button>
+        <el-button type="warning" plain :icon="SwitchButton" @click="runTask(selected, 'reboot')">Reboot</el-button>
+        <el-button type="danger" plain :icon="WarningFilled" @click="runTask(selected, 'factoryReset')">Factory Reset</el-button>
+      </div>
     </template>
   </el-drawer>
 
@@ -485,7 +509,34 @@ onBeforeUnmount(() => {
 }
 
 .device-detail-tabs {
-  margin-top: 18px;
+  margin-top: 0;
+}
+
+.device-overview {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.device-overview-image,
+.device-overview-placeholder {
+  width: 220px;
+  height: 160px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+}
+
+.device-overview-image {
+  object-fit: contain;
+  background: #fff;
+}
+
+.device-overview-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #f5f7fa;
 }
 
 .parameter-toolbar {
@@ -516,5 +567,11 @@ onBeforeUnmount(() => {
 .parameter-pagination {
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .device-overview {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

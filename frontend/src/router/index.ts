@@ -10,6 +10,7 @@ import UsersSettings from '../views/settings/UsersSettings.vue';
 import GroupsSettings from '../views/settings/GroupsSettings.vue';
 import PresetsSettings from '../views/settings/PresetsSettings.vue';
 import ProvisionsSettings from '../views/settings/ProvisionsSettings.vue';
+import DeviceTypesSettings from '../views/settings/DeviceTypesSettings.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -29,6 +30,7 @@ export const router = createRouter({
           redirect: '/settings/general',
           children: [
             { path: 'general', component: GeneralSettings },
+            { path: 'device-types', component: DeviceTypesSettings },
             { path: 'presets', component: PresetsSettings },
             { path: 'provisions', component: ProvisionsSettings },
             { path: 'users', component: UsersSettings },
