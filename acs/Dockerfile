@@ -11,7 +11,8 @@ RUN apk add --no-cache tini wget \
 
 COPY entrypoint.sh /usr/local/bin/freeacs-entrypoint
 
-RUN chmod 755 /usr/local/bin/freeacs-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/freeacs-entrypoint \
+  && chmod 755 /usr/local/bin/freeacs-entrypoint
 
 USER genieacs
 
