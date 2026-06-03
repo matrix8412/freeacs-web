@@ -128,10 +128,31 @@ function closeContextMenu() {
 
 function openContextMenu(row: Device, _column: unknown, event: MouseEvent) {
   event.preventDefault();
+  event.stopPropagation();
   contextMenu.x = event.clientX;
   contextMenu.y = event.clientY;
   contextMenu.device = row;
   contextMenu.visible = true;
+}
+
+function openDeviceFromContext() {
+  const device = contextMenu.device;
+  if (!device) return;
+  void openDevice(device);
+}
+
+function refreshDeviceFromContext() {
+  const device = contextMenu.device;
+  if (!device) return;
+  closeContextMenu();
+  void runTask(device, 'refresh');
+}
+
+function rebootDeviceFromContext() {
+  const device = contextMenu.device;
+  if (!device) return;
+  closeContextMenu();
+  void runTask(device, 'reboot');
 }
 
 async function deleteDeviceFromContext() {
@@ -245,6 +266,9 @@ onBeforeUnmount(() => {
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
       @click.stop
     >
+      <button type="button" class="device-context-item" @click="openDeviceFromContext">View details</button>
+      <button type="button" class="device-context-item" @click="refreshDeviceFromContext">Refresh object</button>
+      <button type="button" class="device-context-item" @click="rebootDeviceFromContext">Reboot</button>
       <button type="button" class="device-context-item danger" @click="deleteDeviceFromContext">Delete device</button>
     </div>
   </teleport>

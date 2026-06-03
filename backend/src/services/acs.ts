@@ -230,8 +230,17 @@ export const acsService = {
 
   async getDevice(id: string) {
     try {
-      const response = await acsClient.get(`/devices/${encodeURIComponent(id)}`);
-      const [device] = await attachFirstAuthorizedAt([normalizeDevice(response.data)]);
+      const response = await acsClient.get('/devices/', {
+        params: {
+          query: JSON.stringify({ _id: id }),
+          limit: 1
+        }
+      });
+      const rawDevice = Array.isArray(response.data) ? response.data[0] : response.data;
+      if (!rawDevice) {
+        throw new HttpError(404, 'Device not found');
+      }
+      const [device] = await attachFirstAuthorizedAt([normalizeDevice(rawDevice)]);
       return device;
     } catch (error) {
       throw mapAcsError(error);
