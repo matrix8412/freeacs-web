@@ -9,10 +9,20 @@ import { useDirtyDialog } from '../composables/useDirtyDialog';
 import { useTableColumns } from '../composables/useTableColumns';
 import type { Device } from '../types';
 
+type DeviceParameter = {
+  path: string;
+  value: string;
+  type: string;
+  writable: string;
+  updated: string;
+};
+
 const loading = ref(false);
 const devices = ref<Device[]>([]);
 const selected = ref<Device | null>(null);
 const drawerOpen = ref(false);
+const activeDeviceTab = ref('overview');
+const parameterSearch = ref('');
 const parameterDialogOpen = ref(false);
 const taskLoading = ref(false);
 const contextMenu = reactive({
@@ -46,6 +56,55 @@ const deviceColumns = [
 const { isColumnVisible, saveColumns, visibleColumns } = useTableColumns('devices.inventory', deviceColumns);
 
 const deviceRows = computed(() => devices.value);
+const parameterRows = computed(() => flattenDeviceParameters(selected.value?.raw));
+const filteredParameterRows = computed(() => {
+  const term = parameterSearch.value.trim().toLowerCase();
+  if (!term) return parameterRows.value;
+
+  return parameterRows.value.filter((parameter) =>
+    [parameter.path, parameter.value, parameter.type, parameter.writable, parameter.updated].some((value) => value.toLowerCase().includes(term))
+  );
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatParameterValue(value: unknown) {
+  if (value === undefined) return '';
+  if (value === null) return 'null';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
+function flattenDeviceParameters(raw: Device['raw']) {
+  const rows: DeviceParameter[] = [];
+  if (!raw) return rows;
+
+  function visit(node: unknown, path: string) {
+    if (!isRecord(node)) return;
+
+    if ('_value' in node && path) {
+      rows.push({
+        path,
+        value: formatParameterValue(node._value),
+        type: formatParameterValue(node._type) || '-',
+        writable: typeof node._writable === 'boolean' ? (node._writable ? 'Yes' : 'No') : '-',
+        updated: formatParameterValue(node._timestamp || node._lastUpdate) || '-'
+      });
+      return;
+    }
+
+    Object.entries(node).forEach(([key, value]) => {
+      if (key.startsWith('_')) return;
+      visit(value, path ? `${path}.${key}` : key);
+    });
+  }
+
+  visit(raw, '');
+  return rows.sort((left, right) => left.path.localeCompare(right.path));
+}
 
 async function load() {
   loading.value = true;
@@ -64,6 +123,8 @@ async function openDevice(device: Device) {
   try {
     const { data } = await api.get(`/devices/${encodeURIComponent(device.id)}`);
     selected.value = data.device;
+    activeDeviceTab.value = 'overview';
+    parameterSearch.value = '';
     drawerOpen.value = true;
   } catch (error) {
     const apiError = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
@@ -273,17 +334,8 @@ onBeforeUnmount(() => {
     </div>
   </teleport>
 
-  <el-drawer v-model="drawerOpen" size="48%" :title="selected?.serialNumber || selected?.id">
+  <el-drawer v-model="drawerOpen" size="64%" :title="selected?.serialNumber || selected?.id">
     <template v-if="selected">
-      <div class="detail-grid">
-        <span>Manufacturer</span><strong>{{ selected.manufacturer || '-' }}</strong>
-        <span>Model</span><strong>{{ selected.productClass || '-' }}</strong>
-        <span>Firmware</span><strong>{{ selected.softwareVersion || '-' }}</strong>
-        <span>IP address</span><strong>{{ selected.ipAddress || '-' }}</strong>
-        <span>First authorized</span><strong>{{ selected.firstAuthorizedAt ? new Date(selected.firstAuthorizedAt).toLocaleString() : '-' }}</strong>
-        <span>Last inform</span><strong>{{ selected.lastInform ? new Date(selected.lastInform).toLocaleString() : 'Never' }}</strong>
-      </div>
-
       <div class="drawer-actions">
         <el-button type="primary" :icon="Setting" @click="openParameterDialog">Set Parameter</el-button>
         <el-button :icon="Refresh" @click="runTask(selected, 'refresh')">Refresh</el-button>
@@ -291,8 +343,36 @@ onBeforeUnmount(() => {
         <el-button type="danger" plain :icon="WarningFilled" @click="runTask(selected, 'factoryReset')">Factory Reset</el-button>
       </div>
 
-      <el-divider />
-      <pre class="raw-json">{{ JSON.stringify(selected.raw, null, 2) }}</pre>
+      <el-tabs v-model="activeDeviceTab" class="device-detail-tabs">
+        <el-tab-pane label="Overview" name="overview">
+          <div class="detail-grid">
+            <span>Manufacturer</span><strong>{{ selected.manufacturer || '-' }}</strong>
+            <span>Model</span><strong>{{ selected.productClass || '-' }}</strong>
+            <span>Firmware</span><strong>{{ selected.softwareVersion || '-' }}</strong>
+            <span>IP address</span><strong>{{ selected.ipAddress || '-' }}</strong>
+            <span>First authorized</span><strong>{{ selected.firstAuthorizedAt ? new Date(selected.firstAuthorizedAt).toLocaleString() : '-' }}</strong>
+            <span>Last inform</span><strong>{{ selected.lastInform ? new Date(selected.lastInform).toLocaleString() : 'Never' }}</strong>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane :label="`Parameters (${parameterRows.length})`" name="parameters">
+          <div class="parameter-toolbar">
+            <el-input v-model="parameterSearch" :prefix-icon="Search" clearable placeholder="Search path, value, type" />
+            <span>{{ filteredParameterRows.length }} shown</span>
+          </div>
+          <el-table :data="filteredParameterRows" border height="520" empty-text="No parameters found">
+            <el-table-column prop="path" label="Parameter" min-width="320" show-overflow-tooltip />
+            <el-table-column prop="value" label="Value" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="type" label="Type" width="130" />
+            <el-table-column prop="writable" label="Writable" width="95" />
+            <el-table-column prop="updated" label="Updated" min-width="185" show-overflow-tooltip />
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="Raw JSON" name="raw">
+          <pre class="raw-json">{{ JSON.stringify(selected.raw, null, 2) }}</pre>
+        </el-tab-pane>
+      </el-tabs>
     </template>
   </el-drawer>
 
@@ -350,5 +430,27 @@ onBeforeUnmount(() => {
 
 .device-context-item.danger {
   color: #c45656;
+}
+
+.device-detail-tabs {
+  margin-top: 18px;
+}
+
+.parameter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.parameter-toolbar .el-input {
+  max-width: 420px;
+}
+
+.parameter-toolbar span {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 </style>
