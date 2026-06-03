@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Edit, Refresh, Search, Setting, SwitchButton, WarningFilled } from '@element-plus/icons-vue';
+import axios from 'axios';
 import { api } from '../api/client';
 import TableColumnChooser from '../components/TableColumnChooser.vue';
 import { useDirtyDialog } from '../composables/useDirtyDialog';
@@ -14,6 +15,12 @@ const selected = ref<Device | null>(null);
 const drawerOpen = ref(false);
 const parameterDialogOpen = ref(false);
 const taskLoading = ref(false);
+const contextMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  device: null as Device | null
+});
 const filters = reactive({
   search: '',
   status: 'all'
@@ -53,12 +60,14 @@ async function load() {
 }
 
 async function openDevice(device: Device) {
+  closeContextMenu();
   try {
     const { data } = await api.get(`/devices/${encodeURIComponent(device.id)}`);
     selected.value = data.device;
     drawerOpen.value = true;
-  } catch {
-    ElMessage.error('Device detail is not available');
+  } catch (error) {
+    const apiError = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
+    ElMessage.error(apiError || 'Device detail is not available');
   }
 }
 
@@ -112,7 +121,68 @@ function openParameterDialog() {
   parameterDialogOpen.value = true;
 }
 
+function closeContextMenu() {
+  contextMenu.visible = false;
+  contextMenu.device = null;
+}
+
+function openContextMenu(row: Device, _column: unknown, event: MouseEvent) {
+  event.preventDefault();
+  contextMenu.x = event.clientX;
+  contextMenu.y = event.clientY;
+  contextMenu.device = row;
+  contextMenu.visible = true;
+}
+
+async function deleteDeviceFromContext() {
+  const device = contextMenu.device;
+  if (!device) return;
+
+  try {
+    await ElMessageBox.confirm(`Delete device ${device.serialNumber || device.id}?`, 'Confirm delete', {
+      type: 'warning',
+      confirmButtonText: 'Delete',
+      confirmButtonClass: 'el-button--danger'
+    });
+  } catch {
+    closeContextMenu();
+    return;
+  }
+
+  try {
+    await api.delete(`/devices/${encodeURIComponent(device.id)}`);
+    ElMessage.success('Device deleted');
+    if (selected.value?.id === device.id) {
+      drawerOpen.value = false;
+      selected.value = null;
+    }
+    await load();
+  } catch (error) {
+    const apiError = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
+    ElMessage.error(apiError || 'Device delete failed');
+  } finally {
+    closeContextMenu();
+  }
+}
+
+function onGlobalClick() {
+  if (contextMenu.visible) {
+    closeContextMenu();
+  }
+}
+
 onMounted(load);
+onMounted(() => {
+  window.addEventListener('click', onGlobalClick);
+  window.addEventListener('contextmenu', onGlobalClick);
+  window.addEventListener('scroll', onGlobalClick, true);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', onGlobalClick);
+  window.removeEventListener('contextmenu', onGlobalClick);
+  window.removeEventListener('scroll', onGlobalClick, true);
+});
 </script>
 
 <template>
@@ -136,7 +206,7 @@ onMounted(load);
   </section>
 
   <section class="panel">
-    <el-table :data="deviceRows" v-loading="loading" stripe row-key="id">
+    <el-table :data="deviceRows" v-loading="loading" stripe row-key="id" @row-contextmenu="openContextMenu">
       <el-table-column v-if="isColumnVisible('status')" label="Status" width="110">
         <template #default="{ row }">
           <el-tag :type="row.online ? 'success' : 'info'">{{ row.online ? 'Online' : 'Offline' }}</el-tag>
@@ -167,6 +237,17 @@ onMounted(load);
       </el-table-column>
     </el-table>
   </section>
+
+  <teleport to="body">
+    <div
+      v-if="contextMenu.visible"
+      class="device-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+    >
+      <button type="button" class="device-context-item danger" @click="deleteDeviceFromContext">Delete device</button>
+    </div>
+  </teleport>
 
   <el-drawer v-model="drawerOpen" size="48%" :title="selected?.serialNumber || selected?.id">
     <template v-if="selected">
@@ -215,3 +296,35 @@ onMounted(load);
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.device-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 170px;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 6px;
+}
+
+.device-context-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.device-context-item:hover {
+  background: #f5f7fa;
+}
+
+.device-context-item.danger {
+  color: #c45656;
+}
+</style>

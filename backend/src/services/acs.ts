@@ -250,6 +250,15 @@ export const acsService = {
     }
   },
 
+  async deleteDevice(id: string) {
+    try {
+      await acsClient.delete(`/devices/${encodeURIComponent(id)}`);
+      await DeviceAuthorization.deleteOne({ deviceId: id });
+    } catch (error) {
+      throw mapAcsError(error);
+    }
+  },
+
   async listProvisions() {
     try {
       const response = await acsClient.get('/provisions/');

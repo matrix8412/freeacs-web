@@ -32,7 +32,7 @@ router.get('/', requirePermission('devices:read'), validateQuery(querySchema), a
   }
 });
 
-router.get('/:id', requirePermission('devices:read'), async (req, res, next) => {
+router.get('/:id(*)', requirePermission('devices:read'), async (req, res, next) => {
   try {
     const id = routeParam(req.params.id);
     const device = await acsService.getDevice(id);
@@ -42,7 +42,18 @@ router.get('/:id', requirePermission('devices:read'), async (req, res, next) => 
   }
 });
 
-router.post('/:id/tasks', requirePermission('devices:write'), validateBody(taskSchema), async (req, res, next) => {
+router.delete('/:id(*)', requirePermission('devices:write'), async (req, res, next) => {
+  try {
+    const id = routeParam(req.params.id);
+    await acsService.deleteDevice(id);
+    await audit(req, 'device.delete', `device:${id}`);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id(*)/tasks', requirePermission('devices:write'), validateBody(taskSchema), async (req, res, next) => {
   try {
     const id = routeParam(req.params.id);
     const task = await acsService.createTask(id, req.body);
