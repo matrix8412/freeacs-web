@@ -15,9 +15,11 @@ import deviceRoutes from './routes/devices.js';
 import preferencesRoutes from './routes/preferences.js';
 import settingsRoutes from './routes/settings.js';
 import { logger } from './utils/logger.js';
-import { HttpError } from './utils/http.js';
+import { HttpError, isHttpError } from './utils/http.js';
+import { ZodError } from 'zod';
+import mongoose from 'mongoose';
 
-const app = express();
+export const app = express();
 const pinoHttp = pinoHttpModule as unknown as (options: { logger: typeof logger }) => express.RequestHandler;
 
 app.disable('x-powered-by');
@@ -68,7 +70,21 @@ app.use((_req, _res, next) => {
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const httpError = error instanceof HttpError ? error : new HttpError(500, 'Internal server error');
+  let httpError: HttpError;
+
+  if (isHttpError(error)) {
+    httpError = error;
+  } else if (error instanceof ZodError) {
+    httpError = new HttpError(400, 'Validation failed', error.flatten());
+  } else if (error instanceof mongoose.Error.ValidationError) {
+    httpError = new HttpError(400, 'Validation failed');
+  } else if ((error as { code?: number })?.code === 11000) {
+    httpError = new HttpError(409, 'Resource already exists');
+  } else if ((error as { message?: string })?.message === 'Origin not allowed') {
+    httpError = new HttpError(403, 'Origin not allowed');
+  } else {
+    httpError = new HttpError(500, 'Internal server error');
+  }
   const status = httpError.status || 500;
 
   if (status >= 500) {
@@ -77,7 +93,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
   res.status(status).json({
     error: httpError.message,
-    details: httpError.details
+    ...(httpError.details !== undefined ? { details: httpError.details } : {})
   });
 });
 
@@ -109,7 +125,8 @@ async function shutdown(signal: string) {
   });
 }
 
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
-
-void start();
+if (process.env.NODE_ENV !== 'test') {
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  void start();
+}

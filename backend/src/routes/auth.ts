@@ -38,10 +38,10 @@ router.post('/login', loginLimiter, validateBody(loginSchema), async (req, res, 
     user.lastLoginAt = new Date();
     await user.save();
     const csrfToken = setAuthCookies(res, String(user._id));
-    (req as any).user = user;
+    req.user = user;
     await audit(req, 'auth.login', 'auth');
 
-    res.json({ user: serializeUser(user as any), csrfToken });
+    res.json({ user: serializeUser(user), csrfToken });
   } catch (error) {
     next(error);
   }
@@ -54,8 +54,7 @@ router.post('/logout', authenticate, async (req, res) => {
 });
 
 router.get('/me', authenticate, (req, res) => {
-  res.json({ user: serializeUser((req as any).user) });
+  res.json({ user: serializeUser(req.user!) });
 });
 
 export default router;
-

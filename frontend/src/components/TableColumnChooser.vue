@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Setting } from '@element-plus/icons-vue';
 import type { TableColumnOption } from '../composables/useTableColumns';
@@ -27,21 +28,23 @@ function handleChange(value: unknown) {
   emit('update:modelValue', nextColumns);
   emit('save', nextColumns);
 }
+
+const selectedColumns = computed({
+  get: () => props.modelValue,
+  set: handleChange
+});
 </script>
 
 <template>
   <el-popover placement="bottom-end" trigger="click" width="240">
     <template #reference>
-      <el-tooltip content="Columns" placement="top">
-        <el-button :icon="Setting" circle aria-label="Table columns" />
-      </el-tooltip>
+      <el-button :icon="Setting" circle aria-label="Table columns" title="Columns" />
     </template>
     <div class="column-chooser">
       <strong>Columns</strong>
-      <el-checkbox-group :model-value="modelValue" class="column-chooser__list" @change="handleChange">
+      <el-checkbox-group v-model="selectedColumns" class="column-chooser__list">
         <el-checkbox v-for="column in columns" :key="column.id" :label="column.id">{{ column.label }}</el-checkbox>
       </el-checkbox-group>
     </div>
   </el-popover>
 </template>
-

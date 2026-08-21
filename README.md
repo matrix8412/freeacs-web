@@ -59,9 +59,25 @@ Change these values before the first start.
   - Users.
   - User groups and permissions.
 
+## Development checks
+
+Run backend API tests and type checking with `npm test` and `npm run typecheck` from `backend/`. Run the frontend checks with `npm run check` from `frontend/`.
+
+The device inventory API is paginated using `page` and `pageSize` query parameters. Responses include `pagination.hasNextPage`; the frontend uses this metadata to request only the visible page.
+
+Devices support ACS-backed tags. Add or remove them in the device detail panel, or use `POST`/`DELETE /api/devices/:id/tags/:tag`. Provision scripts can branch on tags:
+
+```js
+const premium = declare('Tags.premium', { value: 1 }).value[0];
+if (premium) {
+  declare('Device.DeviceInfo.PeriodicInformInterval', null, { value: 300 });
+}
+```
+
+Use `if (!declare('Tags.premium', { value: 1 }).value[0])` for devices without a tag. GenieACS stores a tag as a boolean special parameter under `Tags.*`.
+
 ## References
 
 - FreeACS upstream currently documents Java/MySQL prerequisites: https://github.com/freeacs/freeacs
 - GenieACS documents MongoDB-backed ACS services and NBI API: https://docs.genieacs.com/en/stable/
 - Docker Compose describes multi-container applications: https://docs.docker.com/compose/
-

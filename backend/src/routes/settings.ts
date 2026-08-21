@@ -95,7 +95,7 @@ function ensureObjectIds(ids: string[]) {
 
 async function listUsers() {
   const users = await User.find().sort({ email: 1 }).populate('groupIds');
-  return users.map((user) => serializeUser(user as any));
+  return users.map((user) => serializeUser(user));
 }
 
 async function listDeviceTypes() {
@@ -171,7 +171,7 @@ router.put('/general', requirePermission('settings:write'), validateBody(general
   try {
     const setting = await AppSetting.findOneAndUpdate(
       { key: 'general' },
-      { value: req.body, updatedBy: (req as any).user._id },
+      { value: req.body, updatedBy: req.user!._id },
       { upsert: true, new: true }
     );
 
@@ -296,8 +296,8 @@ router.post('/device-types', requirePermission('settings:write'), validateBody(d
     await DeviceType.create(req.body);
     await audit(req, 'device-types.create', `device-type:${req.body.name}`);
     res.status(201).json({ deviceTypes: await listDeviceTypes() });
-  } catch (error: any) {
-    if (error?.code === 11000) {
+  } catch (error: unknown) {
+    if ((error as { code?: number })?.code === 11000) {
       next(new HttpError(409, 'Device type already exists'));
       return;
     }
@@ -317,8 +317,8 @@ router.put('/device-types/:id', requirePermission('settings:write'), validateBod
 
     await audit(req, 'device-types.update', `device-type:${id}`);
     res.json({ deviceTypes: await listDeviceTypes() });
-  } catch (error: any) {
-    if (error?.code === 11000) {
+  } catch (error: unknown) {
+    if ((error as { code?: number })?.code === 11000) {
       next(new HttpError(409, 'Device type already exists'));
       return;
     }

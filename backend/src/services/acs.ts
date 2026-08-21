@@ -7,7 +7,8 @@ type ListDevicesFilter = {
   search?: string;
   status?: 'all' | 'online' | 'offline';
   tag?: string;
-  limit?: number;
+  page?: number;
+  pageSize?: number;
 };
 
 type DeviceTaskRequest = {
@@ -214,15 +215,23 @@ export const acsService = {
   async listDevices(filter: ListDevicesFilter = {}) {
     try {
       const query = buildDeviceQuery(filter);
+      const page = Math.max(filter.page || 1, 1);
+      const pageSize = Math.min(Math.max(filter.pageSize || 25, 1), 500);
       const response = await acsClient.get('/devices/', {
         params: {
           query: JSON.stringify(query),
-          limit: Math.min(filter.limit || 100, 500)
+          skip: (page - 1) * pageSize,
+          limit: pageSize + 1
         }
       });
 
-      const devices = Array.isArray(response.data) ? response.data.map(normalizeDevice) : [];
-      return attachFirstAuthorizedAt(devices);
+      const rawDevices = Array.isArray(response.data) ? response.data : [];
+      const hasNextPage = rawDevices.length > pageSize;
+      const devices = rawDevices.slice(0, pageSize).map(normalizeDevice);
+      return {
+        devices: await attachFirstAuthorizedAt(devices),
+        pagination: { page, pageSize, hasNextPage }
+      };
     } catch (error) {
       throw mapAcsError(error);
     }
@@ -263,6 +272,24 @@ export const acsService = {
     try {
       await acsClient.delete(`/devices/${encodeURIComponent(id)}`);
       await DeviceAuthorization.deleteOne({ deviceId: id });
+    } catch (error) {
+      throw mapAcsError(error);
+    }
+  },
+
+  async addTag(id: string, tag: string) {
+    try {
+      await acsClient.post(`/devices/${encodeURIComponent(id)}/tags/${encodeURIComponent(tag)}`);
+      return this.getDevice(id);
+    } catch (error) {
+      throw mapAcsError(error);
+    }
+  },
+
+  async removeTag(id: string, tag: string) {
+    try {
+      await acsClient.delete(`/devices/${encodeURIComponent(id)}/tags/${encodeURIComponent(tag)}`);
+      return this.getDevice(id);
     } catch (error) {
       throw mapAcsError(error);
     }

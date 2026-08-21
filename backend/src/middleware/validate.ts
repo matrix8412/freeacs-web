@@ -21,8 +21,7 @@ export function validateQuery<T extends z.ZodTypeAny>(schema: T) {
       return next(new HttpError(400, 'Validation failed', parsed.error.flatten()));
     }
 
-    (req as any).validatedQuery = parsed.data;
+    req.validatedQuery = parsed.data;
     next();
   };
 }
-

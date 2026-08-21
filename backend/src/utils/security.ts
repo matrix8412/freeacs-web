@@ -11,6 +11,12 @@ export type AuthTokenPayload = {
   csrf: string;
 };
 
+export function isAuthTokenPayload(value: unknown): value is AuthTokenPayload {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Record<string, unknown>;
+  return typeof payload.sub === 'string' && payload.sub.length > 0 && typeof payload.csrf === 'string' && payload.csrf.length > 0;
+}
+
 export function randomToken() {
   return crypto.randomBytes(32).toString('hex');
 }
@@ -65,4 +71,3 @@ export const cookieNames = {
   authCookie,
   csrfCookie
 };
-

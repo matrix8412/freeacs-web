@@ -27,7 +27,11 @@ const envSchema = z.object({
 
 export const config = envSchema.parse(process.env);
 
+if (config.NODE_ENV === 'production' && !config.COOKIE_SECURE) {
+  // Local Docker runs over HTTP, but production deployments must use HTTPS.
+  console.warn('COOKIE_SECURE is disabled while NODE_ENV=production');
+}
+
 export const corsOrigins = config.CORS_ORIGIN.split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-

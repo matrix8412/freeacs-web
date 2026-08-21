@@ -13,7 +13,7 @@ type SerializableUser = {
   name: string;
   status: string;
   groupIds?: unknown[];
-  lastLoginAt?: Date;
+  lastLoginAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -49,4 +49,3 @@ export function hasPermission(user: SerializableUser | undefined, permission: Pe
   const groups = (user.groupIds || []).filter(isPopulatedGroup);
   return groups.some((group) => group.permissions.includes(ADMIN_PERMISSION) || group.permissions.includes(permission));
 }
-

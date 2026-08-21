@@ -131,6 +131,7 @@ onMounted(load);
         <el-input v-model="form.name" />
       </el-form-item>
       <el-form-item label="Script">
+        <p class="provision-help">Tag condition example: <code>if (declare("Tags.premium", { value: 1 }).value[0]) { declare("Device.DeviceInfo.PeriodicInformInterval", null, { value: 300 }); }</code>. Use <code>!declare("Tags.premium", { value: 1 }).value[0]</code> for devices without a tag.</p>
         <HighlightedTextarea v-model="form.script" :rows="18" placeholder='log("Provision script");' />
       </el-form-item>
     </el-form>

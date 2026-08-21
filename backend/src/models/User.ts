@@ -1,4 +1,4 @@
-import { Schema, model, type InferSchemaType } from 'mongoose';
+import { Schema, model, type HydratedDocument, type InferSchemaType } from 'mongoose';
 
 const userSchema = new Schema(
   {
@@ -20,5 +20,5 @@ userSchema.set('toJSON', {
   }
 });
 
-export type UserDocument = InferSchemaType<typeof userSchema> & { _id: string };
+export type UserDocument = HydratedDocument<InferSchemaType<typeof userSchema>>;
 export const User = model('User', userSchema);

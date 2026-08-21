@@ -22,7 +22,7 @@ router.get('/tables/:tableKey', async (req, res, next) => {
   try {
     const tableKey = tableKeySchema.parse(routeParam(req.params.tableKey, 'tableKey'));
     const preference = await UserTablePreference.findOne({
-      userId: (req as any).user._id,
+      userId: req.user!._id,
       tableKey
     });
 
@@ -42,7 +42,7 @@ router.put('/tables/:tableKey', validateBody(tablePreferenceSchema), async (req,
     const tableKey = tableKeySchema.parse(routeParam(req.params.tableKey, 'tableKey'));
     const preference = await UserTablePreference.findOneAndUpdate(
       {
-        userId: (req as any).user._id,
+        userId: req.user!._id,
         tableKey
       },
       {

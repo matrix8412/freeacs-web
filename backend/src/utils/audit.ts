@@ -3,7 +3,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { logger } from './logger.js';
 
 export async function audit(req: Request, action: string, resource: string, details?: unknown) {
-  const user = (req as any).user;
+  const user = req.user;
 
   try {
     await AuditLog.create({
@@ -19,4 +19,3 @@ export async function audit(req: Request, action: string, resource: string, deta
     logger.warn({ error }, 'Unable to write audit log');
   }
 }
-

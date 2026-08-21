@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Edit, Refresh, Search, Setting, SwitchButton, WarningFilled } from '@element-plus/icons-vue';
-import axios from 'axios';
 import { api } from '../api/client';
+import { showApiError } from '../api/errors';
 import TableColumnChooser from '../components/TableColumnChooser.vue';
 import { useDirtyDialog } from '../composables/useDirtyDialog';
 import { useTableColumns } from '../composables/useTableColumns';
@@ -28,6 +28,8 @@ const parameterPage = ref(1);
 const parameterPageSize = ref(100);
 const parameterDialogOpen = ref(false);
 const taskLoading = ref(false);
+const tagLoading = ref(false);
+const newTag = ref('');
 const contextMenu = reactive({
   visible: false,
   x: 0,
@@ -36,8 +38,11 @@ const contextMenu = reactive({
 });
 const filters = reactive({
   search: '',
-  status: 'all'
+  status: 'all',
+  page: 1,
+  pageSize: 25
 });
+const pagination = reactive({ page: 1, pageSize: 25, hasNextPage: false });
 const parameterForm = reactive({
   parameterPath: '',
   parameterValue: '',
@@ -142,8 +147,9 @@ async function load() {
   try {
     const { data } = await api.get('/devices', { params: filters });
     devices.value = data.devices;
-  } catch {
-    ElMessage.error('Unable to load devices');
+    Object.assign(pagination, data.pagination);
+  } catch (error) {
+    showApiError(error, 'Unable to load devices');
   } finally {
     loading.value = false;
   }
@@ -157,10 +163,40 @@ async function openDevice(device: Device) {
     activeDeviceTab.value = 'overview';
     parameterSearch.value = '';
     parameterPage.value = 1;
+    newTag.value = '';
     drawerOpen.value = true;
   } catch (error) {
-    const apiError = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
-    ElMessage.error(apiError || 'Device detail is not available');
+    showApiError(error, 'Device detail is not available');
+  }
+}
+
+async function addTag() {
+  if (!selected.value || !newTag.value.trim()) return;
+  const tag = newTag.value.trim();
+  tagLoading.value = true;
+  try {
+    const { data } = await api.post(`/devices/${encodeURIComponent(selected.value.id)}/tags/${encodeURIComponent(tag)}`);
+    selected.value = data.device;
+    newTag.value = '';
+    ElMessage.success('Tag added');
+  } catch (error) {
+    showApiError(error, 'Unable to add tag');
+  } finally {
+    tagLoading.value = false;
+  }
+}
+
+async function removeTag(tag: string) {
+  if (!selected.value) return;
+  tagLoading.value = true;
+  try {
+    const { data } = await api.delete(`/devices/${encodeURIComponent(selected.value.id)}/tags/${encodeURIComponent(tag)}`);
+    selected.value = data.device;
+    ElMessage.success('Tag removed');
+  } catch (error) {
+    showApiError(error, 'Unable to remove tag');
+  } finally {
+    tagLoading.value = false;
   }
 }
 
@@ -177,8 +213,8 @@ async function runTask(device: Device, action: 'refresh' | 'reboot' | 'factoryRe
     await api.post(`/devices/${encodeURIComponent(device.id)}/tasks`, { action, connectionRequest: true });
     ElMessage.success('Task queued');
     await load();
-  } catch {
-    ElMessage.error('Task was not accepted by the ACS');
+  } catch (error) {
+    showApiError(error, 'Task was not accepted by the ACS');
   } finally {
     taskLoading.value = false;
   }
@@ -197,8 +233,8 @@ async function setParameter() {
     parameterForm.parameterPath = '';
     parameterForm.parameterValue = '';
     ElMessage.success('Parameter task queued');
-  } catch {
-    ElMessage.error('Parameter task was rejected');
+  } catch (error) {
+    showApiError(error, 'Parameter task was rejected');
   } finally {
     taskLoading.value = false;
   }
@@ -281,8 +317,7 @@ async function deleteDeviceFromContext() {
     }
     await load();
   } catch (error) {
-    const apiError = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
-    ElMessage.error(apiError || 'Device delete failed');
+    showApiError(error, 'Device delete failed');
   } finally {
     closeContextMenu();
   }
@@ -298,6 +333,17 @@ onMounted(() => {
   void load();
   void loadDeviceTypes();
 });
+
+function changePage(page: number) {
+  filters.page = page;
+  void load();
+}
+
+function changePageSize(pageSize: number) {
+  filters.pageSize = pageSize;
+  filters.page = 1;
+  void load();
+}
 watch(parameterSearch, () => {
   parameterPage.value = 1;
 });
@@ -324,8 +370,8 @@ onBeforeUnmount(() => {
       <p>{{ devices.length }} CPE records</p>
     </div>
     <div class="toolbar-actions">
-      <el-input v-model="filters.search" :prefix-icon="Search" clearable placeholder="Search serial, vendor, model" @keyup.enter="load" />
-      <el-select v-model="filters.status" style="width: 140px" @change="load">
+      <el-input v-model="filters.search" :prefix-icon="Search" clearable placeholder="Search serial, vendor, model" @keyup.enter="filters.page = 1; load()" />
+      <el-select v-model="filters.status" style="width: 140px" @change="filters.page = 1; load()">
         <el-option label="All" value="all" />
         <el-option label="Online" value="online" />
         <el-option label="Offline" value="offline" />
@@ -368,6 +414,17 @@ onBeforeUnmount(() => {
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-if="devices.length || pagination.page > 1"
+      class="parameter-pagination"
+      layout="sizes, prev, pager, next"
+      :current-page="pagination.page"
+      :page-size="pagination.pageSize"
+      :page-sizes="[25, 50, 100]"
+      :page-count="pagination.page + (pagination.hasNextPage ? 1 : 0)"
+      @current-change="changePage"
+      @size-change="changePageSize"
+    />
   </section>
 
   <teleport to="body">
@@ -399,6 +456,22 @@ onBeforeUnmount(() => {
               <span>IP address</span><strong>{{ selected.ipAddress || '-' }}</strong>
               <span>First authorized</span><strong>{{ selected.firstAuthorizedAt ? new Date(selected.firstAuthorizedAt).toLocaleString() : '-' }}</strong>
               <span>Last inform</span><strong>{{ selected.lastInform ? new Date(selected.lastInform).toLocaleString() : 'Never' }}</strong>
+            </div>
+          </div>
+          <div class="device-tags">
+            <div class="device-tags__header">
+              <strong>Tags</strong>
+              <span>Used by provision scripts</span>
+            </div>
+            <div class="device-tags__list">
+              <el-tag v-for="tag in selected.tags" :key="tag" closable :disable-transitions="true" @close="removeTag(tag)">
+                {{ tag }}
+              </el-tag>
+              <span v-if="!selected.tags.length" class="device-tags__empty">No tags assigned</span>
+            </div>
+            <div class="device-tags__add">
+              <el-input v-model="newTag" maxlength="80" placeholder="e.g. premium" @keyup.enter="addTag" />
+              <el-button type="primary" :loading="tagLoading" @click="addTag">Add tag</el-button>
             </div>
           </div>
         </el-tab-pane>

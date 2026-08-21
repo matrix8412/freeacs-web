@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
 import { CircleCheckFilled, Monitor, Refresh, TrendCharts, WarningFilled } from '@element-plus/icons-vue';
 import { api } from '../api/client';
+import { showApiError } from '../api/errors';
 import TableColumnChooser from '../components/TableColumnChooser.vue';
 import { useTableColumns } from '../composables/useTableColumns';
 import type { Device } from '../types';
@@ -28,8 +28,8 @@ async function load() {
   try {
     const { data } = await api.get('/dashboard/summary');
     summary.value = data;
-  } catch {
-    ElMessage.error('Dashboard data is not available');
+  } catch (error) {
+    showApiError(error, 'Dashboard data is not available');
   } finally {
     loading.value = false;
   }

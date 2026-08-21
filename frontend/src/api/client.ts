@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { normalizeApiError } from './errors';
 
 function readCookie(name: string) {
   const value = document.cookie
@@ -30,3 +31,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => Promise.reject(normalizeApiError(error))
+);

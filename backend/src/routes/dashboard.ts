@@ -5,7 +5,7 @@ const router = Router();
 
 router.get('/summary', async (_req, res, next) => {
   try {
-    const [devices, health] = await Promise.all([acsService.listDevices({ limit: 500 }), acsService.health()]);
+    const [{ devices }, health] = await Promise.all([acsService.listDevices({ page: 1, pageSize: 500 }), acsService.health()]);
     const online = devices.filter((device) => device.online).length;
     const offline = devices.length - online;
     const vendors = new Set(devices.map((device) => device.manufacturer).filter(Boolean));
@@ -30,4 +30,3 @@ router.get('/summary', async (_req, res, next) => {
 });
 
 export default router;
-
